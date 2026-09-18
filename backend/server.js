@@ -12,7 +12,17 @@ const studentToolsRoutes = require('./routes/studentToolsRoutes');
 
 const app = express();
 
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+const configuredFrontendUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || !configuredFrontendUrl || origin === configuredFrontendUrl || /^https:\/\/[^/]+\.vercel\.app$/.test(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Origin is not allowed by CORS'));
+  }
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
