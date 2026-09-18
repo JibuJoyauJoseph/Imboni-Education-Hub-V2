@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar.jsx';
-import { api } from '../../services/api';
+import { api, API_ORIGIN } from '../../services/api';
 
 const TABS = ['Resources', 'Assignments', 'Quizzes', 'Teams', 'Forum'];
 
@@ -69,7 +69,7 @@ export default function CourseView() {
               <div key={r.id} className="card">
                 <p className="font-display font-semibold">{r.title}</p>
                 <p className="text-sm text-ink/60 mb-2">{r.description}</p>
-                {r.file_path && <a className="text-sky text-sm" href={`http://localhost:5000${r.file_path}`} target="_blank" rel="noreferrer">Download</a>}
+                {r.file_path && <a className="text-sky text-sm" href={`${API_ORIGIN}${r.file_path}`} target="_blank" rel="noreferrer">Download</a>}
               </div>
             ))}
             {resources.length === 0 && <p className="text-ink/50">No resources shared yet.</p>}

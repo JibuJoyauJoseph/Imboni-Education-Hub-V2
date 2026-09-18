@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, ExternalLink, Search } from 'lucide-react';
-import { api } from '../services/api';
+import { api, API_ORIGIN } from '../services/api';
 
 export default function FreeCourses() {
   const [searchParams] = useSearchParams();
@@ -64,7 +64,7 @@ export default function FreeCourses() {
               <h2 className="font-display font-bold text-[#0D1F13] text-xl mb-2">{resource.title}</h2>
               <p className="text-[#4A6054] text-sm leading-relaxed flex-1">{resource.description}</p>
               <div className="flex gap-4 mt-6 text-sm">
-                {resource.file_path && <a className="text-[#0A5C35] underline" href={`http://localhost:5000${resource.file_path}`} target="_blank" rel="noreferrer">Download</a>}
+                {resource.file_path && <a className="text-[#0A5C35] underline" href={`${API_ORIGIN}${resource.file_path}`} target="_blank" rel="noreferrer">Download</a>}
                 {resource.resource_url && <a className="inline-flex items-center gap-1 text-[#0A5C35] underline" href={resource.resource_url} target="_blank" rel="noreferrer">Open course <ExternalLink size={13} /></a>}
               </div>
             </article>

@@ -1,4 +1,5 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://imboni-education-hub-v2-production.up.railway.app/api';
+export const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
 
 async function request(path, { method = 'GET', body, isForm = false, token } = {}) {
   const headers = {};

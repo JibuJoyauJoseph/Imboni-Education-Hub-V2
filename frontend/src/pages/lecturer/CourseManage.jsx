@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import Navbar from '../../components/Navbar.jsx';
-import { api } from '../../services/api';
+import { api, API_ORIGIN } from '../../services/api';
 
 const TABS = ['Join requests', 'Teams', 'Resources', 'Assignments', 'Gradebook', 'Quizzes', 'Live sessions', 'Attendance'];
 
@@ -283,7 +283,7 @@ export default function CourseManage() {
             </form>
             <div className="space-y-3">
               {resources.map(r => (
-                <div key={r.id} className="card"><p className="font-display font-semibold">{r.title}</p><p className="text-sm text-ink/60">{r.description}</p>{r.file_path && <a className="text-sm text-sky underline" href={`http://localhost:5000${r.file_path}`} target="_blank" rel="noreferrer">Download attachment</a>}</div>
+                <div key={r.id} className="card"><p className="font-display font-semibold">{r.title}</p><p className="text-sm text-ink/60">{r.description}</p>{r.file_path && <a className="text-sm text-sky underline" href={`${API_ORIGIN}${r.file_path}`} target="_blank" rel="noreferrer">Download attachment</a>}</div>
               ))}
             </div>
           </div>
@@ -303,7 +303,7 @@ export default function CourseManage() {
             </form>
             <div className="space-y-3">
               {assignments.map(a => (
-                <div key={a.id} className="card"><p className="font-display font-semibold">{a.title}</p>{a.file_path && <a className="text-sm text-sky underline" href={`http://localhost:5000${a.file_path}`} target="_blank" rel="noreferrer">Download attachment</a>}</div>
+                <div key={a.id} className="card"><p className="font-display font-semibold">{a.title}</p>{a.file_path && <a className="text-sm text-sky underline" href={`${API_ORIGIN}${a.file_path}`} target="_blank" rel="noreferrer">Download attachment</a>}</div>
               ))}
             </div>
           </div>
@@ -312,7 +312,7 @@ export default function CourseManage() {
         {tab === 'Gradebook' && (
           <div className="space-y-6">
             <div className="card"><h2 className="mb-4 font-display text-xl font-semibold">Assignment submissions</h2>{assignments.length === 0 && <p className="text-ink/50">No assignments have been posted yet.</p>}{assignments.map(assignment => <div key={assignment.id} className="flex items-center justify-between border-b border-ink/10 py-3"><div><p className="font-medium">{assignment.title}</p><p className="text-xs text-ink/50">Max score: {assignment.max_score} · Due: {assignment.due_date || 'No deadline'}</p></div><button className="btn-secondary !px-3 !py-1.5 text-xs" onClick={() => reviewSubmissions(assignment)}>Review submissions</button></div>)}</div>
-            {selectedAssignment && <div className="card"><h3 className="mb-4 font-display text-xl font-semibold">{selectedAssignment.title}</h3>{submissions.length === 0 && <p className="text-ink/50">No submissions yet.</p>}{submissions.map(submission => <div key={submission.id} className="border-b border-ink/10 py-4"><div className="flex items-center justify-between"><div><p className="font-medium">{submission.student_name}</p><p className="text-xs text-ink/50">Submitted {new Date(submission.submitted_at).toLocaleString()}</p>{submission.file_path && <a className="text-xs text-sky underline" href={`http://localhost:5000${submission.file_path}`} target="_blank" rel="noreferrer">Open submission</a>}</div><button className="btn-primary !px-3 !py-1.5 text-xs" onClick={() => saveGrade(submission)}>Save grade</button></div><div className="mt-3 grid gap-2 md:grid-cols-[120px_1fr]"><input className="input" type="number" min="0" max={selectedAssignment.max_score} placeholder="Score" value={submission.score || ''} onChange={event => setSubmissions(items => items.map(item => item.id === submission.id ? { ...item, score: event.target.value } : item))} /><textarea className="input" placeholder="Feedback" value={submission.feedback || ''} onChange={event => setSubmissions(items => items.map(item => item.id === submission.id ? { ...item, feedback: event.target.value } : item))} /></div></div>)}</div>}
+            {selectedAssignment && <div className="card"><h3 className="mb-4 font-display text-xl font-semibold">{selectedAssignment.title}</h3>{submissions.length === 0 && <p className="text-ink/50">No submissions yet.</p>}{submissions.map(submission => <div key={submission.id} className="border-b border-ink/10 py-4"><div className="flex items-center justify-between"><div><p className="font-medium">{submission.student_name}</p><p className="text-xs text-ink/50">Submitted {new Date(submission.submitted_at).toLocaleString()}</p>{submission.file_path && <a className="text-xs text-sky underline" href={`${API_ORIGIN}${submission.file_path}`} target="_blank" rel="noreferrer">Open submission</a>}</div><button className="btn-primary !px-3 !py-1.5 text-xs" onClick={() => saveGrade(submission)}>Save grade</button></div><div className="mt-3 grid gap-2 md:grid-cols-[120px_1fr]"><input className="input" type="number" min="0" max={selectedAssignment.max_score} placeholder="Score" value={submission.score || ''} onChange={event => setSubmissions(items => items.map(item => item.id === submission.id ? { ...item, score: event.target.value } : item))} /><textarea className="input" placeholder="Feedback" value={submission.feedback || ''} onChange={event => setSubmissions(items => items.map(item => item.id === submission.id ? { ...item, feedback: event.target.value } : item))} /></div></div>)}</div>}
           </div>
         )}
 
