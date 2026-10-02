@@ -123,6 +123,13 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
+let emailReminderJobStarted = false;
+
+function startJobIfNeeded() {
+  if (emailReminderJobStarted) return;
+  emailReminderJobStarted = true;
+  startEmailReminderJob();
+}
 
 async function startServer() {
   if (production) {
@@ -136,13 +143,20 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, () => {
-    console.log(`IMBONI Education Hub API running on port ${PORT}`);
-    startEmailReminderJob();
+  return new Promise((resolve) => {
+    const server = app.listen(PORT, () => {
+      console.log(`IMBONI Education Hub API running on port ${PORT}`);
+      startJobIfNeeded();
+      resolve(server);
+    });
   });
 }
 
-startServer().catch(error => {
-  console.error('[startup]', error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  startServer().catch(error => {
+    console.error('[startup]', error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = app;
