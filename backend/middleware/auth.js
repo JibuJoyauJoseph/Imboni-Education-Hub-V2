@@ -9,7 +9,12 @@ async function requireAuth(req, res, next) {
     if (!token) return res.status(401).json({ message: 'Not authenticated. Please log in.' });
 
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    const [rows] = await pool.query('SELECT * FROM users WHERE id = ? LIMIT 1', [payload.id]);
+    const [rows] = await pool.query(
+      `SELECT u.*, s.name AS school_name
+       FROM users u LEFT JOIN schools s ON s.id = u.school_id
+       WHERE u.id = ? LIMIT 1`,
+      [payload.id]
+    );
     const user = rows[0];
     if (!user) return res.status(401).json({ message: 'Account not found.' });
     if (!user.is_active) return res.status(403).json({ message: 'This account has been deactivated.' });

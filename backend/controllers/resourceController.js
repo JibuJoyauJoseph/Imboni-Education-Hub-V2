@@ -1,5 +1,5 @@
 const pool = require('../config/db');
-const { assertEnrolled } = require('./courseController');
+const { canAccessCourse } = require('./courseController');
 
 // POST /api/courses/:courseId/resources  (lecturer shares notes/materials)
 exports.createResource = async (req, res) => {
@@ -7,6 +7,9 @@ exports.createResource = async (req, res) => {
     const { courseId } = req.params;
     const { title, description } = req.body;
     if (!title) return res.status(400).json({ message: 'Title is required.' });
+    const courseAccess = await canAccessCourse(req.user, courseId);
+    if (courseAccess === null) return res.status(404).json({ message: 'Course not found.' });
+    if (!courseAccess) return res.status(403).json({ message: 'You cannot share resources in this course.' });
 
     const filePath = req.file ? `/uploads/${req.file.filename}` : null;
     const [result] = await pool.query(
@@ -25,10 +28,9 @@ exports.createResource = async (req, res) => {
 exports.listResources = async (req, res) => {
   try {
     const { courseId } = req.params;
-    if (req.user.role === 'student') {
-      const enrolled = await assertEnrolled(req.user.id, courseId);
-      if (!enrolled) return res.status(403).json({ message: 'Join this course to access its resources.' });
-    }
+    const courseAccess = await canAccessCourse(req.user, courseId);
+    if (courseAccess === null) return res.status(404).json({ message: 'Course not found.' });
+    if (!courseAccess) return res.status(403).json({ message: 'You cannot access this course.' });
     const [rows] = await pool.query(
       `SELECT r.*, u.full_names AS uploaded_by_name FROM resources r JOIN users u ON u.id = r.uploaded_by
        WHERE r.course_id = ? ORDER BY r.created_at DESC`,

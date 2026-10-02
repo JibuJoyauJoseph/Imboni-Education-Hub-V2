@@ -1,12 +1,20 @@
 const multer = require('multer');
-const path = require('path');
+const { persistUpload } = require('../utils/fileStorage');
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, '..', 'uploads')),
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
+const parser = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+module.exports = {
+  single(fieldName) {
+    return (req, res, next) => parser.single(fieldName)(req, res, async error => {
+      if (error) return next(error);
+      if (!req.file) return next();
+
+      try {
+        req.file.filename = await persistUpload(req.file);
+        next();
+      } catch (storageError) {
+        next(storageError);
+      }
+    });
   }
-});
-
-module.exports = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
+};

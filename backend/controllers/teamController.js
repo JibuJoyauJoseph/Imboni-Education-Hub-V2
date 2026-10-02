@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { assertEnrolled } = require('./courseController');
+const emailService = require('../utils/emailService');
 
 // POST /api/courses/:courseId/teams  (student forms a team — Rule: "form teams to do groupworks")
 exports.createTeam = async (req, res) => {
@@ -95,7 +96,13 @@ exports.listTeams = async (req, res) => {
 exports.joinTeam = async (req, res) => {
   try {
     const { teamId } = req.params;
-    const [[team]] = await pool.query('SELECT * FROM teams WHERE id = ?', [teamId]);
+    const [[team]] = await pool.query(
+      `SELECT t.*, c.name AS course_name, c.school_id,
+              creator.email AS creator_email, creator.full_names AS creator_name
+       FROM teams t JOIN courses c ON c.id = t.course_id
+       JOIN users creator ON creator.id = t.created_by WHERE t.id = ?`,
+      [teamId]
+    );
     if (!team) return res.status(404).json({ message: 'Team not found.' });
 
     const enrolled = await assertEnrolled(req.user.id, team.course_id);
@@ -108,6 +115,14 @@ exports.joinTeam = async (req, res) => {
        ON DUPLICATE KEY UPDATE status = 'pending', requested_at = CURRENT_TIMESTAMP, decided_at = NULL, decided_by = NULL`,
       [teamId, req.user.id]
     );
+    await pool.query(
+      'INSERT INTO notifications (user_id, title, body) VALUES (?,?,?)',
+      [team.created_by, 'New team join request', `${req.user.full_names} requested to join ${team.name}.`]
+    );
+    await emailService.sendTeamJoinRequest({
+      email: team.creator_email, name: team.creator_name, studentName: req.user.full_names,
+      teamName: team.name, teamId, schoolId: team.school_id, recipientUserId: team.created_by
+    });
     res.json({ message: 'Join request sent. The team creator must approve it.' });
   } catch (err) {
     console.error(err);
@@ -140,7 +155,8 @@ exports.listAvailableForStudent = async (req, res) => {
 exports.listJoinRequests = async (req, res) => {
   try {
     const [[team]] = await pool.query(
-      `SELECT t.id, t.created_by, c.lecturer_id FROM teams t JOIN courses c ON c.id = t.course_id WHERE t.id = ?`,
+      `SELECT t.id, t.name, t.created_by, c.lecturer_id, c.school_id
+       FROM teams t JOIN courses c ON c.id = t.course_id WHERE t.id = ?`,
       [req.params.teamId]
     );
     if (!team || team.created_by !== req.user.id) return res.status(403).json({ message: 'Only the team creator can view requests.' });
@@ -169,7 +185,12 @@ exports.decideJoinRequest = async (req, res) => {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-      const [[request]] = await connection.query('SELECT * FROM team_join_requests WHERE id = ? AND team_id = ?', [req.params.requestId, req.params.teamId]);
+      const [[request]] = await connection.query(
+        `SELECT r.*, u.email AS student_email, u.full_names AS student_name
+         FROM team_join_requests r JOIN users u ON u.id = r.student_id
+         WHERE r.id = ? AND r.team_id = ?`,
+        [req.params.requestId, req.params.teamId]
+      );
       if (!request) {
         await connection.rollback();
         return res.status(404).json({ message: 'Join request not found.' });
@@ -177,6 +198,14 @@ exports.decideJoinRequest = async (req, res) => {
       await connection.query('UPDATE team_join_requests SET status = ?, decided_at = CURRENT_TIMESTAMP, decided_by = ? WHERE id = ?', [status, req.user.id, request.id]);
       if (status === 'approved') await connection.query('INSERT IGNORE INTO team_members (team_id, student_id) VALUES (?,?)', [team.id, request.student_id]);
       await connection.commit();
+      await connection.query(
+        'INSERT INTO notifications (user_id, title, body) VALUES (?,?,?)',
+        [request.student_id, `Team join request ${status}`, `Your request to join ${team.name} was ${status}.`]
+      );
+      await emailService.sendTeamJoinDecision({
+        email: request.student_email, name: request.student_name, decision: status, teamName: team.name,
+        schoolId: team.school_id, recipientUserId: request.student_id
+      });
       res.json({ message: `Join request ${status}.` });
     } catch (error) {
       await connection.rollback();

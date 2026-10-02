@@ -1,5 +1,6 @@
 const pool = require('../config/db');
-const { assertEnrolled } = require('./courseController');
+const { assertEnrolled, canAccessCourse } = require('./courseController');
+const emailService = require('../utils/emailService');
 
 // POST /api/courses/:courseId/assignments
 exports.createAssignment = async (req, res) => {
@@ -7,7 +8,7 @@ exports.createAssignment = async (req, res) => {
     const { courseId } = req.params;
     const { title, instructions, max_score, due_date } = req.body;
     if (!title) return res.status(400).json({ message: 'Title is required.' });
-    const [[course]] = await pool.query('SELECT id FROM courses WHERE id = ? AND lecturer_id = ?', [courseId, req.user.id]);
+    const [[course]] = await pool.query('SELECT id, name, school_id FROM courses WHERE id = ? AND lecturer_id = ?', [courseId, req.user.id]);
     if (!course) return res.status(404).json({ message: 'Course not found.' });
 
     const filePath = req.file ? `/uploads/${req.file.filename}` : null;
@@ -15,6 +16,23 @@ exports.createAssignment = async (req, res) => {
       'INSERT INTO assignments (course_id, created_by, title, instructions, max_score, due_date, file_path) VALUES (?,?,?,?,?,?,?)',
       [courseId, req.user.id, title, instructions || null, max_score || 100, due_date || null, filePath]
     );
+    const [recipients] = await pool.query(
+      `SELECT u.id, u.email, u.full_names FROM enrollments e
+       JOIN users u ON u.id = e.student_id
+       WHERE e.course_id = ? AND u.role = 'student' AND u.approval_status = 'approved' AND u.is_active = TRUE`,
+      [courseId]
+    );
+    if (recipients.length) {
+      await pool.query(
+        'INSERT INTO notifications (user_id, title, body) VALUES ?',
+        [recipients.map(student => [student.id, 'New assignment', `${title} was posted in ${course.name}.`])]
+      );
+      emailService.sendNewAssignmentNotice({
+        recipients, title, courseName: course.name,
+        dueDate: due_date ? new Date(due_date).toLocaleString() : null,
+        courseId: course.id, schoolId: course.school_id
+      }).catch(err => console.error('[assignmentController] Could not send new-assignment emails:', err.message));
+    }
     res.status(201).json({ message: 'Assignment posted.', assignment_id: result.insertId });
   } catch (err) {
     console.error(err);
@@ -26,6 +44,9 @@ exports.createAssignment = async (req, res) => {
 exports.listAssignments = async (req, res) => {
   try {
     const { courseId } = req.params;
+    const courseAccess = await canAccessCourse(req.user, courseId);
+    if (courseAccess === null) return res.status(404).json({ message: 'Course not found.' });
+    if (!courseAccess) return res.status(403).json({ message: 'You cannot access this course.' });
     const [rows] = await pool.query('SELECT * FROM assignments WHERE course_id = ? ORDER BY due_date ASC', [courseId]);
     res.json({ assignments: rows });
   } catch (err) {
@@ -38,17 +59,21 @@ exports.listAssignments = async (req, res) => {
 exports.submitAssignment = async (req, res) => {
   try {
     const { id } = req.params;
+    const answerText = req.body.answer_text?.trim() || null;
     const [[assignment]] = await pool.query('SELECT * FROM assignments WHERE id = ?', [id]);
     if (!assignment) return res.status(404).json({ message: 'Assignment not found.' });
 
     const enrolled = await assertEnrolled(req.user.id, assignment.course_id);
     if (!enrolled) return res.status(403).json({ message: 'You must be enrolled in this course to submit.' });
+    if (!answerText && !req.file) return res.status(400).json({ message: 'Write a response or attach a file before submitting.' });
 
     const filePath = req.file ? `/uploads/${req.file.filename}` : null;
     await pool.query(
-      `INSERT INTO submissions (assignment_id, student_id, file_path)
-       VALUES (?,?,?) ON DUPLICATE KEY UPDATE file_path = VALUES(file_path), submitted_at = NOW()`,
-      [id, req.user.id, filePath]
+      `INSERT INTO submissions (assignment_id, student_id, file_path, answer_text)
+       VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE
+       file_path = COALESCE(VALUES(file_path), file_path),
+       answer_text = COALESCE(VALUES(answer_text), answer_text), submitted_at = NOW()`,
+      [id, req.user.id, filePath, answerText]
     );
     res.json({ message: 'Assignment submitted.' });
   } catch (err) {

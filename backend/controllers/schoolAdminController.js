@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
 const { generateDefaultPassword } = require('../utils/generateCredentials');
+const emailService = require('../utils/emailService');
 
 // POST /api/admin/users
 // Rule 6: Admin can add new lecturers & students directly. Account is
@@ -37,6 +38,9 @@ exports.createUser = async (req, res) => {
       );
       await pool.query('INSERT INTO kanban_boards (student_id) VALUES (?)', [userId]);
     }
+
+    const [[school]] = await pool.query('SELECT name FROM schools WHERE id = ?', [schoolId]);
+    await emailService.sendAccountCreated({ email, name: full_names, role, school: school?.name, userId, schoolId });
 
     res.status(201).json({
       message: `${role === 'lecturer' ? 'Lecturer' : 'Student'} account created.`,
@@ -93,6 +97,7 @@ exports.decideStudent = async (req, res) => {
           ? 'Your account has been approved. You can now log in and access your dashboard.'
           : 'Your registration was rejected. Please contact your school admin.']
     );
+    await emailService.sendApprovalDecision({ email: student.email, name: student.full_names, decision, userId: student.id, schoolId: student.school_id });
 
     res.json({ message: `Student ${decision}.` });
   } catch (err) {

@@ -9,8 +9,14 @@ const assignmentController = require('../controllers/assignmentController');
 const quizController = require('../controllers/quizController');
 const sessionController = require('../controllers/sessionController');
 const forumController = require('../controllers/forumController');
+const emailController = require('../controllers/emailController');
 
 router.use(requireAuth, requireApproved);
+
+router.get('/email/status', requireRole('lecturer'), emailController.getEmailStatus);
+router.get('/email/logs', requireRole('lecturer'), emailController.listEmailLogs);
+router.post('/email/test', requireRole('lecturer'), emailController.sendTestEmail);
+router.post('/courses/:courseId/announcements', requireRole('lecturer'), emailController.createCourseAnnouncement);
 
 // ----- Courses -----
 router.post('/courses', requireRole('lecturer'), courseController.createCourse);

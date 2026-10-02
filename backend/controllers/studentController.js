@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
+const emailService = require('../utils/emailService');
 
 // POST /api/students/register
 // Rule 7 (registration branching):
@@ -72,6 +73,7 @@ exports.registerStudent = async (req, res) => {
     await conn.query('INSERT INTO kanban_boards (student_id) VALUES (?)', [userId]);
 
     await conn.commit();
+    await emailService.sendRegistrationPending({ email, name: full_names, school: school.name, userId, schoolId: school.id });
     res.status(201).json({
       message: 'Registration submitted. Your account will be reviewed by the school admin before you can log in.',
       user_id: userId

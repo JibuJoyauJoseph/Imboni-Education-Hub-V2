@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const emailService = require('../utils/emailService');
 
 // POST /api/courses  (lecturer creates a course within their school)
 exports.createCourse = async (req, res) => {
@@ -42,7 +43,12 @@ exports.listCourses = async (req, res) => {
 exports.requestToJoin = async (req, res) => {
   try {
     const { id: courseId } = req.params;
-    const [[course]] = await pool.query('SELECT * FROM courses WHERE id = ? AND school_id = ?', [courseId, req.user.school_id]);
+    const [[course]] = await pool.query(
+      `SELECT c.*, u.email AS lecturer_email, u.full_names AS lecturer_name
+       FROM courses c JOIN users u ON u.id = c.lecturer_id
+       WHERE c.id = ? AND c.school_id = ?`,
+      [courseId, req.user.school_id]
+    );
     if (!course) return res.status(404).json({ message: 'Course not found in your school.' });
 
     const [existing] = await pool.query(
@@ -61,6 +67,10 @@ exports.requestToJoin = async (req, res) => {
       'INSERT INTO notifications (user_id, title, body) VALUES (?,?,?)',
       [course.lecturer_id, 'New join request', `${req.user.full_names} requested to join ${course.name}.`]
     );
+    await emailService.sendJoinRequestReceived({
+      email: course.lecturer_email, name: course.lecturer_name, studentName: req.user.full_names,
+      courseName: course.name, courseId, schoolId: course.school_id, recipientUserId: course.lecturer_id
+    });
     res.status(201).json({ message: 'Join request sent. Waiting for the lecturer to approve.' });
   } catch (err) {
     console.error(err);
@@ -100,8 +110,10 @@ exports.decideJoinRequest = async (req, res) => {
     }
 
     const [[request]] = await conn.query(
-      `SELECT jr.*, c.lecturer_id, c.name AS course_name FROM course_join_requests jr
-       JOIN courses c ON c.id = jr.course_id WHERE jr.id = ?`,
+      `SELECT jr.*, c.lecturer_id, c.school_id, c.name AS course_name,
+          u.email AS student_email, u.full_names AS student_name
+       FROM course_join_requests jr JOIN courses c ON c.id = jr.course_id
+       JOIN users u ON u.id = jr.student_id WHERE jr.id = ?`,
       [requestId]
     );
     if (!request || request.lecturer_id !== req.user.id) {
@@ -128,6 +140,11 @@ exports.decideJoinRequest = async (req, res) => {
           : `Your request to join ${request.course_name} was rejected.`]
     );
     await conn.commit();
+    await emailService.sendJoinRequestDecision({
+      email: request.student_email, name: request.student_name, decision,
+      courseName: request.course_name, schoolId: request.school_id, courseId: request.course_id,
+      recipientUserId: request.student_id
+    });
     res.json({ message: `Join request ${decision}.` });
   } catch (err) {
     await conn.rollback();
@@ -146,4 +163,17 @@ exports.assertEnrolled = async (studentId, courseId) => {
     [studentId, courseId]
   );
   return rows.length > 0;
+};
+
+exports.canAccessCourse = async (user, courseId) => {
+  const [[course]] = await pool.query(
+    'SELECT id, lecturer_id, school_id FROM courses WHERE id = ?',
+    [courseId]
+  );
+  if (!course) return null;
+  if (user.role === 'platform_admin') return true;
+  if (user.role === 'school_admin') return Number(course.school_id) === Number(user.school_id);
+  if (user.role === 'lecturer') return Number(course.lecturer_id) === Number(user.id);
+  if (user.role === 'student') return exports.assertEnrolled(user.id, courseId);
+  return false;
 };

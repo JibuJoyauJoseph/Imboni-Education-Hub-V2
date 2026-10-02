@@ -6,6 +6,19 @@ const normalizeDateTime = value => {
   return String(value).replace('T', ' ').slice(0, 19);
 };
 
+const checkQuizAvailability = (quiz, userRole = 'student') => {
+  if (userRole !== 'student') return { allowed: true };
+
+  const now = new Date();
+  if (quiz.open_at && new Date(quiz.open_at).getTime() > now.getTime()) {
+    return { allowed: false, message: 'This quiz is not open yet.' };
+  }
+  if (quiz.close_at && new Date(quiz.close_at).getTime() < now.getTime()) {
+    return { allowed: false, message: 'This quiz is no longer available.' };
+  }
+  return { allowed: true };
+};
+
 // POST /api/courses/:courseId/quizzes
 // body: { title, time_limit_minutes, open_at, close_at,
 //         questions: [{ question_text, points, options: [{option_text, is_correct}] }] }
@@ -60,6 +73,16 @@ exports.getQuiz = async (req, res) => {
     const [[quiz]] = await pool.query('SELECT * FROM quizzes WHERE id = ?', [id]);
     if (!quiz) return res.status(404).json({ message: 'Quiz not found.' });
 
+    if (req.user?.role === 'student') {
+      const availability = checkQuizAvailability(quiz, req.user.role);
+      if (!availability.allowed) {
+        return res.status(403).json({ message: availability.message });
+      }
+
+      const enrolled = await assertEnrolled(req.user.id, quiz.course_id);
+      if (!enrolled) return res.status(403).json({ message: 'You must be enrolled in this course to attempt the quiz.' });
+    }
+
     const [questions] = await pool.query('SELECT id, question_text, question_type, points FROM quiz_questions WHERE quiz_id = ?', [id]);
     for (const q of questions) {
       const cols = req.user.role === 'student' ? 'id, option_text' : 'id, option_text, is_correct';
@@ -83,6 +106,11 @@ exports.submitAttempt = async (req, res) => {
     const { answers } = req.body;
     const [[quiz]] = await conn.query('SELECT * FROM quizzes WHERE id = ?', [id]);
     if (!quiz) return res.status(404).json({ message: 'Quiz not found.' });
+
+    const availability = checkQuizAvailability(quiz, req.user.role);
+    if (!availability.allowed) {
+      return res.status(403).json({ message: availability.message });
+    }
 
     const enrolled = await assertEnrolled(req.user.id, quiz.course_id);
     if (!enrolled) return res.status(403).json({ message: 'You must be enrolled in this course to attempt the quiz.' });
@@ -131,7 +159,13 @@ exports.submitAttempt = async (req, res) => {
 exports.listQuizzes = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const [rows] = await pool.query('SELECT id, title, time_limit_minutes, open_at, close_at FROM quizzes WHERE course_id = ?', [courseId]);
+    const [rows] = await pool.query(`
+      SELECT q.id, q.title, q.time_limit_minutes, q.open_at, q.close_at, q.created_at,
+             (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id) AS question_count
+      FROM quizzes q
+      WHERE q.course_id = ?
+      ORDER BY q.created_at DESC
+    `, [courseId]);
     res.json({ quizzes: rows });
   } catch (err) {
     console.error(err);

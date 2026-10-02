@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
 const { generateDefaultPassword } = require('../utils/generateCredentials');
+const emailService = require('../utils/emailService');
 
 // POST /api/platform/schools
 // "Website -> Sch1, Sch2, Sch3 ... -> Admin registers school -> School is registered"
@@ -47,6 +48,10 @@ exports.registerSchool = async (req, res) => {
     );
 
     await conn.commit();
+    await emailService.sendSchoolRegistered({
+      email: admin_email, name: admin_full_names, schoolName: name,
+      userId: adminResult.insertId, schoolId
+    });
     res.status(201).json({
       message: `${name} registered. Subscription is pending payment (50,000 RWF / 3 months).`,
       school_id: schoolId,
@@ -105,6 +110,16 @@ exports.recordPayment = async (req, res) => {
       [newStart.toISOString().slice(0, 10), newEnd.toISOString().slice(0, 10), id]
     );
     await conn.commit();
+    const [schoolAdmins] = await pool.query(
+      `SELECT id, email, full_names FROM users
+       WHERE school_id = ? AND role = 'school_admin' AND is_active = TRUE`,
+      [id]
+    );
+    await Promise.all(schoolAdmins.map(admin => emailService.sendPaymentConfirmation({
+      email: admin.email, name: admin.full_names, schoolName: school.name,
+      amount: amount || 50000.00, validUntil: newEnd.toISOString().slice(0, 10),
+      schoolId: Number(id), recipientUserId: admin.id
+    })));
     res.json({ message: `Payment recorded. ${school.name} is active until ${newEnd.toISOString().slice(0, 10)}.` });
   } catch (err) {
     await conn.rollback();
